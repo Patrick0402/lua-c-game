@@ -3,7 +3,13 @@ print("Lua: loading configuration...")
 config = {
     screen_width = 800,
     screen_height = 600,
-    title = "SDL Lua Demo (from Lua)"
+    title = "SDL Lua Demo (from Lua)",
+    
+    -- New logging configuration
+    log = {
+        level = "debug",  -- debug, info, warn, error
+        file = "game.log"
+    }
 }
 
 player = {
