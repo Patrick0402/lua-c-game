@@ -1,5 +1,11 @@
 print("Lua: loading configuration...")
 
+config = {
+    screen_width = 800,
+    screen_height = 600,
+    title = "SDL Lua Demo (from Lua)"
+}
+
 player = {
     x = 390,
     y = 290,
