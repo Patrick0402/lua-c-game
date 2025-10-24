@@ -4,10 +4,10 @@ config = {
     screen_width = 800,
     screen_height = 600,
     title = "SDL Lua Demo (from Lua)",
-    
+
     -- New logging configuration
     log = {
-        level = "debug",  -- debug, info, warn, error
+        level = "debug", -- debug, info, warn, error
         file = "game.log"
     }
 }
@@ -22,7 +22,7 @@ player = {
     color = {
         r = 255,
         g = 0,
-        b = 255,
+        b = 0,
         a = 255
     }
 }
