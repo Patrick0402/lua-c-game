@@ -4,111 +4,122 @@
 #include <string.h>
 #include <stdio.h>
 
-
-int get_lua_int_field(lua_State *L, const char *key, int default_value)
+/// Split a dot path ("player.color.r") and traverse Lua tables.
+static bool push_lua_field_path(lua_State *L, const char *path)
 {
-    int result = default_value;
-    lua_getfield(L, -1, key); // get table[key] (expects table at top of stack)
+    const char *start = path;
+    const char *dot;
+    while ((dot = strchr(start, '.')) != NULL)
+    {
+        char key[64];
+        size_t len = dot - start;
+        if (len >= sizeof(key))
+            len = sizeof(key) - 1;
+        memcpy(key, start, len);
+        key[len] = '\0';
 
+        lua_getfield(L, -1, key);
+        if (!lua_istable(L, -1))
+        {
+            log_warn("Lua: '%s' not found or not a table.", key);
+            lua_pop(L, 1);
+            return false;
+        }
+        lua_remove(L, -2); // pop parent, keep child
+        start = dot + 1;
+    }
+
+    lua_getfield(L, -1, start);
+    return true;
+}
+
+static int get_int_path(lua_State *L, const char *path, int def)
+{
+    if (!push_lua_field_path(L, path))
+        return def;
+    int val = def;
+    if (lua_isinteger(L, -1))
+        val = (int)lua_tointeger(L, -1);
+    else
+        log_debug("Lua: '%s' missing or invalid, using default %d", path, def);
+    lua_pop(L, 1);
+    return val;
+}
+
+static float get_float_path(lua_State *L, const char *path, float def)
+{
+    if (!push_lua_field_path(L, path))
+        return def;
+    float val = def;
     if (lua_isnumber(L, -1))
-    {
-        result = (int)lua_tointeger(L, -1);
-    }
+        val = (float)lua_tonumber(L, -1);
     else
-    {
-        fprintf(stderr, "Warning: Lua config '%s' not found or not a number. Using default %d.\n", key, default_value);
-    }
-
+        log_debug("Lua: '%s' missing or invalid, using default %f", path, def);
     lua_pop(L, 1);
-    return result;
+    return val;
 }
 
-float get_lua_float_field(lua_State *L, const char *key, float default_value)
+static Uint8 get_component_path(lua_State *L, const char *path, Uint8 def)
 {
-    float result = default_value;
-    lua_getfield(L, -1, key);
-
+    if (!push_lua_field_path(L, path))
+        return def;
+    Uint8 val = def;
     if (lua_isnumber(L, -1))
-    {
-        result = (float)lua_tonumber(L, -1);
-    }
+        val = (Uint8)lua_tointeger(L, -1);
     else
-    {
-        fprintf(stderr, "Warning: Lua config '%s' not found or not a number. Using default %f.\n", key, default_value);
-    }
-
+        log_debug("Lua: color '%s' missing or invalid, using default %d", path, def);
     lua_pop(L, 1);
-    return result;
+    return val;
 }
 
-void get_lua_color_field(lua_State *l, const char *key, SDL_Color *color)
+int get_lua_int_field(lua_State *L, const char *path, int def)
 {
-    lua_getfield(l, -1, key);
-    if (lua_istable(l, -1))
-    {
-        lua_getfield(l, -1, "r");
-        if (lua_isnumber(l, -1))
-            color->r = (Uint8)lua_tointeger(l, -1);
-        else
-            fprintf(stderr, "Warning: Lua config: color field 'r' missing/invalid.\n");
-        lua_pop(l, 1);
-
-        lua_getfield(l, -1, "g");
-        if (lua_isnumber(l, -1))
-            color->g = (Uint8)lua_tointeger(l, -1);
-        else
-            fprintf(stderr, "Warning: Lua config: color field 'g' missing/invalid.\n");
-        lua_pop(l, 1);
-
-        lua_getfield(l, -1, "b");
-        if (lua_isnumber(l, -1))
-            color->b = (Uint8)lua_tointeger(l, -1);
-        else
-            fprintf(stderr, "Warning: Lua config: color field 'b' missing/invalid.\n");
-        lua_pop(l, 1);
-
-        lua_getfield(l, -1, "a");
-        if (lua_isnumber(l, -1))
-            color->a = (Uint8)lua_tointeger(l, -1);
-        else
-            fprintf(stderr, "Warning: Lua config: color field 'a' missing/invalid.\n");
-        lua_pop(l, 1);
-    }
-    else
-    {
-        fprintf(stderr, "Warning: Lua config: '%s' field not found or not a table.\n", key);
-    }
-    lua_pop(l, 1);
+    return get_int_path(L, path, def);
 }
 
-void get_lua_string_field(lua_State *L, const char *key, const char *default_value, char *out_buf, size_t buf_size)
+float get_lua_float_field(lua_State *L, const char *path, float def)
 {
-    lua_getfield(L, -1, key);
-    if (lua_isstring(L, -1))
+    return get_float_path(L, path, def);
+}
+
+void get_lua_color_field(lua_State *L, const char *path, SDL_Color *color)
+{
+    if (!push_lua_field_path(L, path))
+        return;
+    if (lua_istable(L, -1))
     {
-        const char *s = lua_tostring(L, -1);
-        strncpy(out_buf, s, buf_size - 1);
-        out_buf[buf_size - 1] = '\0';
+        color->r = get_component_path(L, "r", color->r);
+        color->g = get_component_path(L, "g", color->g);
+        color->b = get_component_path(L, "b", color->b);
+        color->a = get_component_path(L, "a", color->a);
     }
     else
-    {
-        fprintf(stderr, "Warning: Lua config '%s' not found or not a string. Using default '%s'.\n", key, default_value);
-        strncpy(out_buf, default_value, buf_size - 1);
-        out_buf[buf_size - 1] = '\0';
-    }
+        log_warn("Lua: '%s' not found or not a table; using defaults.", path);
     lua_pop(L, 1);
 }
 
-bool reload_lua_config(lua_State *L, const char *filename) {
-    log_info("Reloading Lua configuration from %s", filename);
-    
-    lua_settop(L, 0);  // Clear stack
-    
-    if (luaL_dofile(L, filename) != LUA_OK) {
-        log_error("Failed to reload Lua script: %s", lua_tostring(L, -1));
+void get_lua_string_field(lua_State *L, const char *path, const char *def, char *out, size_t n)
+{
+    if (!push_lua_field_path(L, path))
+    {
+        snprintf(out, n, "%s", def);
+        return;
+    }
+    const char *val = lua_isstring(L, -1) ? lua_tostring(L, -1) : def;
+    snprintf(out, n, "%s", val);
+    lua_pop(L, 1);
+}
+
+bool reload_lua_config(lua_State *L, const char *file)
+{
+    log_info("Reloading Lua configuration from %s", file);
+    lua_settop(L, 0);
+    if (luaL_dofile(L, file) != LUA_OK)
+    {
+        log_error("Lua reload failed: %s", lua_tostring(L, -1));
         lua_pop(L, 1);
         return false;
     }
-    
+    lua_gc(L, LUA_GCCOLLECT, 0);
     return true;
 }
