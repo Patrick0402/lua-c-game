@@ -55,10 +55,10 @@ bool init_sdl()
 {
     if (SDL_Init(SDL_INIT_VIDEO) < 0)
     {
-        log_error("SDL could not initialize! SDL_Error: %s", SDL_GetError());
+        LOG_ERROR("SDL could not initialize! SDL_Error: %s", SDL_GetError());
         return false;
     }
-    log_info("SDL initialized successfully.");
+    LOG_INFO("SDL initialized successfully.");
 
     return true;
 }
@@ -68,14 +68,14 @@ bool create_window_and_renderer()
     gWindow = SDL_CreateWindow(gWindowTitle, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, gScreenWidth, gScreenHeight, SDL_WINDOW_SHOWN);
     if (gWindow == NULL)
     {
-        log_error("Window could not be created! SDL_Error: %s", SDL_GetError());
+        LOG_ERROR("Window could not be created! SDL_Error: %s", SDL_GetError());
         return false;
     }
 
     gRenderer = SDL_CreateRenderer(gWindow, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
     if (gRenderer == NULL)
     {
-        log_error("Renderer could not be created! SDL_Error: %s", SDL_GetError());
+        LOG_ERROR("Renderer could not be created! SDL_Error: %s", SDL_GetError());
         return false;
     }
     return true;
@@ -86,7 +86,7 @@ bool init_lua()
     L = luaL_newstate();
     if (L == NULL)
     {
-        log_error("Failed to create Lua state");
+        LOG_ERROR("Failed to create Lua state");
         return false;
     }
 
@@ -94,10 +94,10 @@ bool init_lua()
 
     if (luaL_dofile(L, CONFIG_FILE) != LUA_OK)
     {
-        log_error("Error loading Lua script %s: %s", CONFIG_FILE, lua_tostring(L, -1));
+        LOG_ERROR("Error loading Lua script %s: %s", CONFIG_FILE, lua_tostring(L, -1));
         lua_pop(L, 1);
     }
-    log_info("Lua loaded successfully from %s", CONFIG_FILE);
+    LOG_INFO("Lua loaded successfully from %s", CONFIG_FILE);
 
     return true;
 }
@@ -118,7 +118,7 @@ void load_config_from_lua()
     gPlayer.speed = get_lua_float_field(L, "Player.speed", gPlayer.speed);
     get_lua_color_field(L, "Player.color", &gPlayer.color);
 
-    log_info("Loaded player config: pos=(%.1f,%.1f), size=(%d,%d), speed=%.1f, color=(%d,%d,%d,%d)",
+    LOG_INFO("Loaded player config: pos=(%.1f,%.1f), size=(%d,%d), speed=%.1f, color=(%d,%d,%d,%d)",
              gPlayer.x, gPlayer.y, gPlayer.w, gPlayer.h,
              gPlayer.speed, gPlayer.color.r, gPlayer.color.g, gPlayer.color.b, gPlayer.color.a);
 }
@@ -149,13 +149,13 @@ bool initialize()
 
 void cleanup()
 {
-    log_info("Cleaning up...");
+    LOG_INFO("Cleaning up...");
 
     if (L)
     {
         lua_close(L);
         L = NULL;
-        log_info("Lua state closed.");
+        LOG_INFO("Lua state closed.");
     }
 
     if (gRenderer)
@@ -171,7 +171,7 @@ void cleanup()
     }
 
     SDL_Quit();
-    log_info("SDL Quit.");
+    LOG_INFO("SDL Quit.");
 }
 
 void handleInput()
@@ -191,8 +191,8 @@ void handleInput()
                 if (reload_lua_config(L, CONFIG_FILE))
                 {
                     load_config_from_lua();
-                    log_info("Configuration reloaded successfully");
-                    log_debug("Player position after reload: x=%.1f, y=%.1f", gPlayer.x, gPlayer.y);
+                    LOG_INFO("Configuration reloaded successfully");
+                    LOG_DEBUG("Player position after reload: x=%.1f, y=%.1f", gPlayer.x, gPlayer.y);
                 }
             }
         }
@@ -259,11 +259,11 @@ int main(int argc, char const *argv[])
 {
     // Initialize logger first
     log_init("game.log", LOG_DEBUG);
-    log_info("Game starting...");
+    LOG_INFO("Game starting...");
 
     if (!initialize())
     {
-        log_error("Failed to initialize!");
+        LOG_ERROR("Failed to initialize!");
         cleanup();
         return 1;
     }
@@ -281,7 +281,7 @@ int main(int argc, char const *argv[])
         render();
     }
 
-    log_info("Game shutting down...");
+    LOG_INFO("Game shutting down...");
     cleanup();
     log_shutdown();
     return 0;

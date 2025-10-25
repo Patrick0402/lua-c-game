@@ -24,7 +24,7 @@ static bool push_lua_field_path(lua_State *L, const char *path, bool strict)
     if (lua_isnil(L, -1))
     {
         if (strict)
-            log_error("Lua: global '%s' not found", segment);
+            LOG_ERROR("Lua: global '%s' not found", segment);
         return false;
     }
 
@@ -45,7 +45,7 @@ static bool push_lua_field_path(lua_State *L, const char *path, bool strict)
         if (lua_isnil(L, -1))
         {
             if (strict)
-                log_error("Lua: '%s' not found", segment);
+                LOG_ERROR("Lua: '%s' not found", segment);
             return false;
         }
 
@@ -63,9 +63,9 @@ static int get_int_path(lua_State *L, const char *path, int def, bool strict)
     if (lua_isinteger(L, -1))
         val = (int)lua_tointeger(L, -1);
     else if (strict)
-        log_error("Lua: '%s' missing or invalid integer", path);
+        LOG_ERROR("Lua: '%s' missing or invalid integer", path);
     else
-        log_debug("Lua: '%s' missing or invalid, using default %d", path, def);
+        LOG_DEBUG("Lua: '%s' missing or invalid, using default %d", path, def);
     lua_pop(L, 1);
     return val;
 }
@@ -78,9 +78,9 @@ static float get_float_path(lua_State *L, const char *path, float def, bool stri
     if (lua_isnumber(L, -1))
         val = (float)lua_tonumber(L, -1);
     else if (strict)
-        log_error("Lua: '%s' missing or invalid float", path);
+        LOG_ERROR("Lua: '%s' missing or invalid float", path);
     else
-        log_debug("Lua: '%s' missing or invalid, using default %f", path, def);
+        LOG_DEBUG("Lua: '%s' missing or invalid, using default %f", path, def);
     lua_pop(L, 1);
     return val;
 }
@@ -93,9 +93,9 @@ static Uint8 get_component_path(lua_State *L, const char *path, Uint8 def, bool 
     if (lua_isnumber(L, -1))
         val = (Uint8)lua_tointeger(L, -1);
     else if (strict)
-        log_error("Lua: color '%s' missing or invalid", path);
+        LOG_ERROR("Lua: color '%s' missing or invalid", path);
     else
-        log_debug("Lua: color '%s' missing or invalid, using default %d", path, def);
+        LOG_DEBUG("Lua: color '%s' missing or invalid, using default %d", path, def);
     lua_pop(L, 1);
     return val;
 }
@@ -133,7 +133,7 @@ void get_lua_color_field(lua_State *L, const char *path, SDL_Color *color)
         lua_pop(L, 1);
     }
     else
-        log_warn("Lua: '%s' not found or not a table; using defaults.", path);
+        LOG_WARN("Lua: '%s' not found or not a table; using defaults.", path);
     lua_pop(L, 1);
 }
 
@@ -151,11 +151,11 @@ void get_lua_string_field(lua_State *L, const char *path, const char *def, char 
 
 bool reload_lua_config(lua_State *L, const char *file)
 {
-    log_info("Reloading Lua configuration from %s", file);
+    LOG_INFO("Reloading Lua configuration from %s", file);
     lua_settop(L, 0);
     if (luaL_dofile(L, file) != LUA_OK)
     {
-        log_error("Lua reload failed: %s", lua_tostring(L, -1));
+        LOG_ERROR("Lua reload failed: %s", lua_tostring(L, -1));
         lua_pop(L, 1);
         return false;
     }
