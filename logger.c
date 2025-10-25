@@ -36,11 +36,13 @@ void log_set_level(LogLevel level)
     current_level = level;
 }
 
-void log_write(LogLevel level, const char *file, int line, const char *fmt, ...)
+static void log_vwrite(LogLevel level, const char *file, int line, const char *fmt, va_list args)
 {
     if (level < current_level)
         return;
 
+    // Timestamp
+    char timestamp[20];
     time_t now = time(NULL);
     struct tm tm_now;
 #ifdef _WIN32
@@ -48,25 +50,24 @@ void log_write(LogLevel level, const char *file, int line, const char *fmt, ...)
 #else
     localtime_r(&now, &tm_now);
 #endif
-    char timestamp[20];
     strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", &tm_now);
 
+    // Monta a mensagem final
+    char message[1024];
+    vsnprintf(message, sizeof(message), fmt, args);
+
+    // Escreve no arquivo
+    if (log_file)
+        fprintf(log_file, "[%s][%s][%s:%d] %s\n", timestamp, level_strings[level], file, line, message);
+
+    // Escreve no console com cor
+    printf("%s[%s][%s][%s:%d]%s %s\n", level_colors[level], timestamp, level_strings[level], file, line, color_reset, message);
+}
+
+void log_write(LogLevel level, const char *file, int line, const char *fmt, ...)
+{
     va_list args;
     va_start(args, fmt);
-
-    // Write to file
-    if (log_file)
-    {
-        fprintf(log_file, "[%s][%s][%s:%d] ", timestamp, level_strings[level], file, line);
-        vfprintf(log_file, fmt, args);
-        fprintf(log_file, "\n");
-        fflush(log_file);
-    }
-
-    // Write to console with color
-    printf("%s[%s][%s][%s:%d]%s ", level_colors[level], timestamp, level_strings[level], file, line, color_reset);
-    vprintf(fmt, args);
-    printf("\n");
-
+    log_vwrite(level, file, line, fmt, args);
     va_end(args);
 }

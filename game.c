@@ -89,11 +89,12 @@ bool init_lua()
         log_error("Failed to create Lua state");
         return false;
     }
+
     luaL_openlibs(L);
 
     if (luaL_dofile(L, CONFIG_FILE) != LUA_OK)
     {
-        log_error("Error loading Lua script %s: %s", CONFIG_FILE, lua_tostring(L, -1)); // keep going with defaults
+        log_error("Error loading Lua script %s: %s", CONFIG_FILE, lua_tostring(L, -1));
         lua_pop(L, 1);
     }
     log_info("Lua loaded successfully from %s", CONFIG_FILE);
@@ -101,20 +102,21 @@ bool init_lua()
     return true;
 }
 
+
 void load_config_from_lua()
 {
     // Screen config
-    gScreenWidth = get_lua_int_field(L, "config.screen_width", gScreenWidth);
-    gScreenHeight = get_lua_int_field(L, "config.screen_height", gScreenHeight);
-    get_lua_string_field(L, "config.title", "SDL Lua Demo", gWindowTitle, sizeof(gWindowTitle));
+    gScreenWidth = get_lua_int_field(L, "Config.screen_width", gScreenWidth);
+    gScreenHeight = get_lua_int_field(L, "Config.screen_height", gScreenHeight);
+    get_lua_string_field(L, "Config.title", "SDL Lua Demo", gWindowTitle, sizeof(gWindowTitle));
 
     // Player config
-    gPlayer.x = get_lua_float_field(L, "player.x", gPlayer.x);
-    gPlayer.y = get_lua_float_field(L, "player.y", gPlayer.y);
-    gPlayer.w = get_lua_int_field(L, "player.width", gPlayer.w);
-    gPlayer.h = get_lua_int_field(L, "player.height", gPlayer.h);
-    gPlayer.speed = get_lua_float_field(L, "player.speed", gPlayer.speed);
-    get_lua_color_field(L, "player.color", &gPlayer.color);
+    gPlayer.x = get_lua_float_field(L, "Player.x", gPlayer.x);
+    gPlayer.y = get_lua_float_field(L, "Player.y", gPlayer.y);
+    gPlayer.w = get_lua_int_field(L, "Player.width", gPlayer.w);
+    gPlayer.h = get_lua_int_field(L, "Player.height", gPlayer.h);
+    gPlayer.speed = get_lua_float_field(L, "Player.speed", gPlayer.speed);
+    get_lua_color_field(L, "Player.color", &gPlayer.color);
 
     log_info("Loaded player config: pos=(%.1f,%.1f), size=(%d,%d), speed=%.1f, color=(%d,%d,%d,%d)",
              gPlayer.x, gPlayer.y, gPlayer.w, gPlayer.h,
