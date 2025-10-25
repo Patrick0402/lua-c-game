@@ -1,55 +1,27 @@
+// game.c
+
 #include <stdio.h>
 #include <stdbool.h>
-#include <string.h>
 #include <math.h>
 #include <SDL2/SDL.h>
-
-#include <lua.h>     //Core Lua functions
-#include <lualib.h>  //Standard Lua libraries (print, math, etc.)
-#include <lauxlib.h> //Helper function for lua APIs
-
-#include "lua_utils.h"
+#include <lua.h>
+#include <lualib.h>
+#include <lauxlib.h>
 #include "logger.h"
+#include "lua_utils.h"
 
-#define SCREEN_WIDTH 800
-#define SCREEN_HEIGHT 600
 #define CONFIG_FILE "config.lua"
 #define WINDOW_TITLE_MAX 128
-
-typedef struct
-{
-    float x, y; // Position
-    int w, h;
-    SDL_Color color; // RGBA Color
-    float speed;     // Movement speed in pixels/second
-    float dx;        // Current velocity x
-    float dy;        // Current velocity y
-} Player;
 
 SDL_Window *gWindow = NULL;
 SDL_Renderer *gRenderer = NULL;
 lua_State *L = NULL;
-Player gPlayer;
 bool gGameIsRunning = true;
+static int gScreenWidth = 800;
+static int gScreenHeight = 600;
+static char gWindowTitle[WINDOW_TITLE_MAX] = "SDL Lua Space Invaders";
 
-// Now screen size and title are configurable (defaults below, can be overridden by Lua)
-static int gScreenWidth = SCREEN_WIDTH;
-static int gScreenHeight = SCREEN_HEIGHT;
-static char gWindowTitle[WINDOW_TITLE_MAX] = "SDL Lua Demo";
-
-void Player_set_defaults(Player *p)
-{
-    p->x = 0.0f;
-    p->y = 0.0f;
-    p->w = 50;
-    p->h = 50;
-    p->speed = 100.0f;
-    p->color.r = 255;
-    p->color.g = 0;
-    p->color.b = 0;
-    p->color.a = 255;
-    p->dx = p->dy = 0.0f;
-}
+// ---------------- SDL Init ----------------
 
 bool init_sdl()
 {
@@ -58,212 +30,234 @@ bool init_sdl()
         LOG_ERROR("SDL could not initialize! SDL_Error: %s", SDL_GetError());
         return false;
     }
-    LOG_INFO("SDL initialized successfully.");
-
     return true;
 }
 
 bool create_window_and_renderer()
 {
-    gWindow = SDL_CreateWindow(gWindowTitle, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, gScreenWidth, gScreenHeight, SDL_WINDOW_SHOWN);
-    if (gWindow == NULL)
+    gWindow = SDL_CreateWindow(gWindowTitle, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+                               gScreenWidth, gScreenHeight, SDL_WINDOW_SHOWN);
+    if (!gWindow)
     {
-        LOG_ERROR("Window could not be created! SDL_Error: %s", SDL_GetError());
+        LOG_ERROR("SDL_CreateWindow failed: %s", SDL_GetError());
         return false;
     }
 
     gRenderer = SDL_CreateRenderer(gWindow, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
-    if (gRenderer == NULL)
+    if (!gRenderer)
     {
-        LOG_ERROR("Renderer could not be created! SDL_Error: %s", SDL_GetError());
+        LOG_ERROR("SDL_CreateRenderer failed: %s", SDL_GetError());
         return false;
     }
+
     return true;
 }
+
+// ---------------- Forward Declarations ----------------
+int lua_draw_rect(lua_State *L);
+
+// ---------------- Lua Init ----------------
 
 bool init_lua()
 {
     L = luaL_newstate();
-    if (L == NULL)
+    if (!L)
     {
         LOG_ERROR("Failed to create Lua state");
         return false;
     }
-
     luaL_openlibs(L);
+    lua_register(L, "DrawRect", lua_draw_rect);
 
-    if (luaL_dofile(L, CONFIG_FILE) != LUA_OK)
+    // Carregar todos os scripts Lua necessários
+    const char *scripts[] = {
+        CONFIG_FILE,
+        "player.lua",
+        "projectile.lua",
+        "enemy.lua",
+        "main.lua"};
+
+    for (int i = 0; i < sizeof(scripts) / sizeof(scripts[0]); i++)
     {
-        LOG_ERROR("Error loading Lua script %s: %s", CONFIG_FILE, lua_tostring(L, -1));
-        lua_pop(L, 1);
+        if (luaL_dofile(L, scripts[i]) != LUA_OK)
+        {
+            LOG_ERROR("Error loading Lua script %s: %s", scripts[i], lua_tostring(L, -1));
+            lua_pop(L, 1);
+            return false;
+        }
     }
-    LOG_INFO("Lua loaded successfully from %s", CONFIG_FILE);
 
     return true;
 }
 
+// ---------------- Config ----------------
 
 void load_config_from_lua()
 {
-    // Screen config
     gScreenWidth = get_lua_int_field(L, "Config.screen_width", gScreenWidth);
     gScreenHeight = get_lua_int_field(L, "Config.screen_height", gScreenHeight);
-    get_lua_string_field(L, "Config.title", "SDL Lua Demo", gWindowTitle, sizeof(gWindowTitle));
-
-    // Player config
-    gPlayer.x = get_lua_float_field(L, "Player.x", gPlayer.x);
-    gPlayer.y = get_lua_float_field(L, "Player.y", gPlayer.y);
-    gPlayer.w = get_lua_int_field(L, "Player.width", gPlayer.w);
-    gPlayer.h = get_lua_int_field(L, "Player.height", gPlayer.h);
-    gPlayer.speed = get_lua_float_field(L, "Player.speed", gPlayer.speed);
-    get_lua_color_field(L, "Player.color", &gPlayer.color);
-
-    LOG_INFO("Loaded player config: pos=(%.1f,%.1f), size=(%d,%d), speed=%.1f, color=(%d,%d,%d,%d)",
-             gPlayer.x, gPlayer.y, gPlayer.w, gPlayer.h,
-             gPlayer.speed, gPlayer.color.r, gPlayer.color.g, gPlayer.color.b, gPlayer.color.a);
+    get_lua_string_field(L, "Config.title", "SDL Lua Space Invaders", gWindowTitle, sizeof(gWindowTitle));
 }
+
+// ---------------- Initialize & Cleanup ----------------
 
 bool initialize()
 {
-    // SDL
     if (!init_sdl())
         return false;
-
-    // Lua
     if (!init_lua())
-    {
-        // proceed but L may be NULL; we guard uses later
         return false;
-    }
-
-    // Set defaults and then override from Lua
-    Player_set_defaults(&gPlayer);
     load_config_from_lua();
-
-    // Create window and renderer with possibly overridden sizes/title
     if (!create_window_and_renderer())
         return false;
-
     return true;
 }
 
 void cleanup()
 {
-    LOG_INFO("Cleaning up...");
-
     if (L)
     {
         lua_close(L);
         L = NULL;
-        LOG_INFO("Lua state closed.");
     }
-
     if (gRenderer)
     {
         SDL_DestroyRenderer(gRenderer);
         gRenderer = NULL;
     }
-
     if (gWindow)
     {
         SDL_DestroyWindow(gWindow);
         gWindow = NULL;
     }
-
     SDL_Quit();
-    LOG_INFO("SDL Quit.");
 }
 
-void handleInput()
+// ---------------- Input ----------------
+
+void handle_input()
 {
     SDL_Event e;
-    while (SDL_PollEvent(&e) != 0)
+    bool left = false, right = false, up = false, down = false, shoot = false;
+
+    const Uint8 *keyStates = SDL_GetKeyboardState(NULL);
+    left = keyStates[SDL_SCANCODE_LEFT] || keyStates[SDL_SCANCODE_A];
+    right = keyStates[SDL_SCANCODE_RIGHT] || keyStates[SDL_SCANCODE_D];
+    up = keyStates[SDL_SCANCODE_UP] || keyStates[SDL_SCANCODE_W];
+    down = keyStates[SDL_SCANCODE_DOWN] || keyStates[SDL_SCANCODE_S];
+    shoot = keyStates[SDL_SCANCODE_SPACE];
+
+    while (SDL_PollEvent(&e))
     {
         if (e.type == SDL_QUIT)
-        {
             gGameIsRunning = false;
-        }
         else if (e.type == SDL_KEYDOWN)
         {
             if (e.key.keysym.sym == SDLK_r && (e.key.keysym.mod & KMOD_CTRL))
             {
-                // Ctrl+R: Reload configuration
-                if (reload_lua_config(L, CONFIG_FILE))
+                // Recarregar scripts Lua
+                const char *scripts[] = {CONFIG_FILE, "player.lua", "projectile.lua", "enemy.lua", "main.lua"};
+                for (int i = 0; i < sizeof(scripts) / sizeof(scripts[0]); i++)
                 {
-                    load_config_from_lua();
-                    LOG_INFO("Configuration reloaded successfully");
-                    LOG_DEBUG("Player position after reload: x=%.1f, y=%.1f", gPlayer.x, gPlayer.y);
+                    if (luaL_dofile(L, scripts[i]) != LUA_OK)
+                    {
+                        LOG_ERROR("Error reloading Lua script %s: %s", scripts[i], lua_tostring(L, -1));
+                        lua_pop(L, 1);
+                    }
                 }
+                load_config_from_lua();
+                LOG_INFO("Lua scripts reloaded!");
             }
         }
     }
 
-    const Uint8 *currentKeyStates = SDL_GetKeyboardState(NULL);
-    gPlayer.dx = 0;
-    gPlayer.dy = 0;
-
-    if (currentKeyStates[SDL_SCANCODE_UP] || currentKeyStates[SDL_SCANCODE_W])
-        gPlayer.dy = -1.0f;
-    if (currentKeyStates[SDL_SCANCODE_DOWN] || currentKeyStates[SDL_SCANCODE_S])
-        gPlayer.dy = 1.0f;
-    if (currentKeyStates[SDL_SCANCODE_LEFT] || currentKeyStates[SDL_SCANCODE_A])
-        gPlayer.dx = -1.0f;
-    if (currentKeyStates[SDL_SCANCODE_RIGHT] || currentKeyStates[SDL_SCANCODE_D])
-        gPlayer.dx = 1.0f;
+    // Criar tabela Input global no Lua
+    lua_newtable(L);
+    lua_pushboolean(L, left);
+    lua_setfield(L, -2, "left");
+    lua_pushboolean(L, right);
+    lua_setfield(L, -2, "right");
+    lua_pushboolean(L, up);
+    lua_setfield(L, -2, "up");
+    lua_pushboolean(L, down);
+    lua_setfield(L, -2, "down");
+    lua_pushboolean(L, shoot);
+    lua_setfield(L, -2, "shoot");
+    lua_setglobal(L, "Input");
 }
 
-void update(float deltaTime)
+// ---------------- Update ----------------
+
+void update(float dt)
 {
-    float length = sqrtf(gPlayer.dx * gPlayer.dx + gPlayer.dy * gPlayer.dy);
-    if (length > 0.0f)
+    lua_getglobal(L, "UpdateGame");
+    lua_pushnumber(L, dt);
+    if (lua_pcall(L, 1, 0, 0) != LUA_OK)
     {
-        gPlayer.dx /= length;
-        gPlayer.dy /= length;
+        LOG_ERROR("Lua update_game error: %s", lua_tostring(L, -1));
+        lua_pop(L, 1);
     }
-
-    gPlayer.x += (gPlayer.dx * gPlayer.speed * deltaTime);
-    gPlayer.y += (gPlayer.dy * gPlayer.speed * deltaTime);
-
-    // Boundaries use configurable screen size
-    if (gPlayer.x < 0)
-        gPlayer.x = 0;
-    if (gPlayer.y < 0)
-        gPlayer.y = 0;
-    if (gPlayer.x + gPlayer.w > gScreenWidth)
-        gPlayer.x = gScreenWidth - gPlayer.w;
-    if (gPlayer.y + gPlayer.h > gScreenHeight)
-        gPlayer.y = gScreenHeight - gPlayer.h;
 }
+
+// ---------------- Render ----------------
+
+// ---------------- Render ----------------
 
 void render()
 {
-    // 1. Clear screen (background color)
-    SDL_SetRenderDrawColor(gRenderer, 0x33, 0x33, 0x33, 0xFF);
-    // Dark gray
+    SDL_SetRenderDrawColor(gRenderer, 0, 0, 0, 255);
     SDL_RenderClear(gRenderer);
 
-    // 2. Draw the player retangle (using color from Lua config)
-    SDL_SetRenderDrawColor(gRenderer, gPlayer.color.r, gPlayer.color.g, gPlayer.color.b, gPlayer.color.a);
-    SDL_Rect rect = {
-        (int)gPlayer.x,
-        (int)gPlayer.y,
-        gPlayer.w,
-        gPlayer.h};
-    SDL_RenderFillRect(gRenderer, &rect);
+    // Chamar funções Lua de desenho
+    const char *draw_funcs[] = {
+        "DrawPlayer",
+        "DrawEnemies",
+        "DrawProjectiles",
+        "DrawEnemyProjectiles" // <- agora separado corretamente
+    };
 
-    // 3. Update screen
+    for (int i = 0; i < sizeof(draw_funcs) / sizeof(draw_funcs[0]); i++)
+    {
+        lua_getglobal(L, draw_funcs[i]);
+        lua_pushlightuserdata(L, gRenderer);
+        if (lua_pcall(L, 1, 0, 0) != LUA_OK)
+        {
+            LOG_ERROR("Lua %s error: %s", draw_funcs[i], lua_tostring(L, -1));
+            lua_pop(L, 1);
+        }
+    }
+
     SDL_RenderPresent(gRenderer);
 }
 
-int main(int argc, char const *argv[])
+int lua_draw_rect(lua_State *L)
 {
-    // Initialize logger first
+    SDL_Renderer *renderer = (SDL_Renderer *)lua_touserdata(L, 1);
+    int x = luaL_checkinteger(L, 2);
+    int y = luaL_checkinteger(L, 3);
+    int w = luaL_checkinteger(L, 4);
+    int h = luaL_checkinteger(L, 5);
+    int r = luaL_checkinteger(L, 6);
+    int g = luaL_checkinteger(L, 7);
+    int b = luaL_checkinteger(L, 8);
+    int a = luaL_checkinteger(L, 9);
+
+    SDL_SetRenderDrawColor(renderer, r, g, b, a);
+    SDL_Rect rect = {x, y, w, h};
+    SDL_RenderFillRect(renderer, &rect);
+    return 0;
+}
+
+// ---------------- Main Loop ----------------
+
+int main(int argc, char **argv)
+{
     log_init("game.log", LOG_DEBUG);
     LOG_INFO("Game starting...");
 
     if (!initialize())
     {
-        LOG_ERROR("Failed to initialize!");
+        LOG_ERROR("Initialization failed!");
         cleanup();
         return 1;
     }
@@ -273,11 +267,11 @@ int main(int argc, char const *argv[])
     while (gGameIsRunning)
     {
         int currentTime = SDL_GetTicks();
-        float deltaTime = (currentTime - lastTime) / 1000.0f;
+        float dt = (currentTime - lastTime) / 1000.0f;
         lastTime = currentTime;
 
-        handleInput();
-        update(deltaTime);
+        handle_input();
+        update(dt);
         render();
     }
 

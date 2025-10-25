@@ -1,6 +1,5 @@
 game
 game.log
-game.o
 
-logger.o
-lua_utils.o
+
+*.o
