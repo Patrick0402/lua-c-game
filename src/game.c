@@ -9,6 +9,7 @@
 #include <lauxlib.h>
 #include "logger.h"
 #include "lua_utils.h"
+#include <SDL2/SDL_ttf.h>
 
 #define CONFIG_FILE "config.lua"
 #define WINDOW_TITLE_MAX 128
@@ -50,11 +51,20 @@ bool create_window_and_renderer()
         return false;
     }
 
+    if (TTF_Init() == -1)
+    {
+        LOG_ERROR("SDL_ttf could not initialize! %s", TTF_GetError());
+        return false;
+    }
+
     return true;
 }
 
 // ---------------- Forward Declarations ----------------
 int lua_draw_rect(lua_State *L);
+int lua_draw_text(lua_State *L);
+int lua_clear_screen(lua_State *L);
+int lua_present_renderer(lua_State *L);
 
 // ---------------- Lua Init ----------------
 
@@ -68,14 +78,17 @@ bool init_lua()
     }
     luaL_openlibs(L);
     lua_register(L, "DrawRect", lua_draw_rect);
+    lua_register(L, "DrawText", lua_draw_text);
+    lua_register(L, "ClearScreen", lua_clear_screen);
+    lua_register(L, "PresentRenderer", lua_present_renderer);
 
     // Carregar todos os scripts Lua necessários
     const char *scripts[] = {
-        CONFIG_FILE,
-        "player.lua",
-        "projectile.lua",
-        "enemy.lua",
-        "main.lua"};
+        "scripts/config.lua",
+        "scripts/player.lua",
+        "scripts/projectile.lua",
+        "scripts/enemy.lua",
+        "scripts/main.lua"};
 
     for (int i = 0; i < sizeof(scripts) / sizeof(scripts[0]); i++)
     {
@@ -130,6 +143,7 @@ void cleanup()
         SDL_DestroyWindow(gWindow);
         gWindow = NULL;
     }
+    TTF_Quit();
     SDL_Quit();
 }
 
@@ -137,6 +151,10 @@ void cleanup()
 
 void handle_input()
 {
+    static bool prevShoot = false;
+    static bool prevUp = false;
+    static bool prevDown = false;
+
     SDL_Event e;
     bool left = false, right = false, up = false, down = false, shoot = false;
 
@@ -151,27 +169,19 @@ void handle_input()
     {
         if (e.type == SDL_QUIT)
             gGameIsRunning = false;
-        else if (e.type == SDL_KEYDOWN)
-        {
-            if (e.key.keysym.sym == SDLK_r && (e.key.keysym.mod & KMOD_CTRL))
-            {
-                // Recarregar scripts Lua
-                const char *scripts[] = {CONFIG_FILE, "player.lua", "projectile.lua", "enemy.lua", "main.lua"};
-                for (int i = 0; i < sizeof(scripts) / sizeof(scripts[0]); i++)
-                {
-                    if (luaL_dofile(L, scripts[i]) != LUA_OK)
-                    {
-                        LOG_ERROR("Error reloading Lua script %s: %s", scripts[i], lua_tostring(L, -1));
-                        lua_pop(L, 1);
-                    }
-                }
-                load_config_from_lua();
-                LOG_INFO("Lua scripts reloaded!");
-            }
-        }
     }
 
-    // Criar tabela Input global no Lua
+    // Detecta bordas (transição de solto -> pressionado)
+    bool shootPressed = (!prevShoot && shoot);
+    bool upPressed = (!prevUp && up);
+    bool downPressed = (!prevDown && down);
+
+    // Atualiza anteriores
+    prevShoot = shoot;
+    prevUp = up;
+    prevDown = down;
+
+    // Cria tabela Input no Lua
     lua_newtable(L);
     lua_pushboolean(L, left);
     lua_setfield(L, -2, "left");
@@ -183,6 +193,15 @@ void handle_input()
     lua_setfield(L, -2, "down");
     lua_pushboolean(L, shoot);
     lua_setfield(L, -2, "shoot");
+
+    // Novos campos — apenas quando a tecla for pressionada naquele frame
+    lua_pushboolean(L, shootPressed);
+    lua_setfield(L, -2, "shoot_pressed");
+    lua_pushboolean(L, upPressed);
+    lua_setfield(L, -2, "up_pressed");
+    lua_pushboolean(L, downPressed);
+    lua_setfield(L, -2, "down_pressed");
+
     lua_setglobal(L, "Input");
 }
 
@@ -201,33 +220,16 @@ void update(float dt)
 
 // ---------------- Render ----------------
 
-// ---------------- Render ----------------
-
 void render()
 {
-    SDL_SetRenderDrawColor(gRenderer, 0, 0, 0, 255);
-    SDL_RenderClear(gRenderer);
-
-    // Chamar funções Lua de desenho
-    const char *draw_funcs[] = {
-        "DrawPlayer",
-        "DrawEnemies",
-        "DrawProjectiles",
-        "DrawEnemyProjectiles" // <- agora separado corretamente
-    };
-
-    for (int i = 0; i < sizeof(draw_funcs) / sizeof(draw_funcs[0]); i++)
+    lua_getglobal(L, "Render");
+    lua_pushlightuserdata(L, gRenderer);
+    if (lua_pcall(L, 1, 0, 0) != LUA_OK)
     {
-        lua_getglobal(L, draw_funcs[i]);
-        lua_pushlightuserdata(L, gRenderer);
-        if (lua_pcall(L, 1, 0, 0) != LUA_OK)
-        {
-            LOG_ERROR("Lua %s error: %s", draw_funcs[i], lua_tostring(L, -1));
-            lua_pop(L, 1);
-        }
+        LOG_ERROR("Lua render error: %s", lua_tostring(L, -1));
+        lua_pop(L, 1);
     }
-
-    SDL_RenderPresent(gRenderer);
+    // SDL_RenderPresent já é chamado dentro de Lua
 }
 
 int lua_draw_rect(lua_State *L)
@@ -245,6 +247,61 @@ int lua_draw_rect(lua_State *L)
     SDL_SetRenderDrawColor(renderer, r, g, b, a);
     SDL_Rect rect = {x, y, w, h};
     SDL_RenderFillRect(renderer, &rect);
+    return 0;
+}
+
+int lua_draw_text(lua_State *L)
+{
+    SDL_Renderer *renderer = (SDL_Renderer *)lua_touserdata(L, 1);
+    const char *text = luaL_checkstring(L, 2);
+    int x = luaL_checkinteger(L, 3);
+    int y = luaL_checkinteger(L, 4);
+    int r = luaL_checkinteger(L, 5);
+    int g = luaL_checkinteger(L, 6);
+    int b = luaL_checkinteger(L, 7);
+    int a = luaL_checkinteger(L, 8);
+
+    static TTF_Font *font = NULL;
+    if (!font)
+    {
+        font = TTF_OpenFont("assets/Roboto-Bold.ttf", 32);
+        if (!font)
+        {
+            LOG_ERROR("Failed to load font: %s", TTF_GetError());
+            return 0;
+        }
+    }
+
+    SDL_Color color = {r, g, b, a};
+    SDL_Surface *surface = TTF_RenderText_Blended(font, text, color);
+    SDL_Texture *texture = SDL_CreateTextureFromSurface(renderer, surface);
+
+    SDL_Rect dest = {x, y, surface->w, surface->h};
+    SDL_RenderCopy(renderer, texture, NULL, &dest);
+
+    SDL_FreeSurface(surface);
+    SDL_DestroyTexture(texture);
+
+    return 0;
+}
+
+int lua_clear_screen(lua_State *L)
+{
+    SDL_Renderer *renderer = (SDL_Renderer *)lua_touserdata(L, 1);
+    int r = luaL_checkinteger(L, 2);
+    int g = luaL_checkinteger(L, 3);
+    int b = luaL_checkinteger(L, 4);
+    int a = luaL_checkinteger(L, 5);
+
+    SDL_SetRenderDrawColor(renderer, r, g, b, a);
+    SDL_RenderClear(renderer);
+    return 0;
+}
+
+int lua_present_renderer(lua_State *L)
+{
+    SDL_Renderer *renderer = (SDL_Renderer *)lua_touserdata(L, 1);
+    SDL_RenderPresent(renderer);
     return 0;
 }
 
@@ -272,9 +329,19 @@ int main(int argc, char **argv)
 
         handle_input();
         update(dt);
+
+        // Verifica se Lua quer sair
+        lua_getglobal(L, "GameState");
+        lua_getfield(L, -1, "current");
+        const char *state = lua_tostring(L, -1);
+        if (state && strcmp(state, "quit") == 0)
+        {
+            gGameIsRunning = false;
+        }
+        lua_pop(L, 2); // limpa pilha (GameState e current)
+
         render();
     }
-
     LOG_INFO("Game shutting down...");
     cleanup();
     log_shutdown();

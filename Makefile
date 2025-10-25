@@ -1,20 +1,15 @@
-# Makefile
 CC = gcc
-CFLAGS = -Wall -O2 `sdl2-config --cflags` -I/usr/include/lua5.4
-LDFLAGS = `sdl2-config --libs` -llua -lm
-SOURCES = game.c lua_utils.c logger.c
-OBJECTS = $(SOURCES:.c=.o)
-TARGET = game
+CFLAGS = -Wall -I/usr/include/SDL2 -I/usr/include/lua5.4 -O2
+LIBS = -lSDL2 -lSDL2_ttf -llua -lm
+OBJS = src/game.o src/lua_utils.o src/logger.o
 
-all: $(TARGET)
+all: game
 
-$(TARGET): $(OBJECTS)
-	$(CC) -o $@ $^ $(LDFLAGS)
+game: $(OBJS)
+	$(CC) $(OBJS) -o game $(LIBS)
 
 %.o: %.c
-	$(CC) -c $< -o $@ $(CFLAGS)
+	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(OBJECTS) $(TARGET)
-
-.PHONY: all clean
+	rm -f $(OBJS) game
