@@ -3,6 +3,7 @@
 -- Funções nativas mockadas (para evitar alertas no editor)
 Input = Input or {}
 DrawRect = DrawRect or function(...) end
+DrawText = DrawText or function(...) end
 ClearScreen = ClearScreen or function(...) end
 PresentRenderer = PresentRenderer or function(...) end
 
@@ -34,6 +35,7 @@ function ResetGame()
     Player:reset()
     ResetEnemySystem()
     ResetDifficulty()
+    Score = 0;
 end
 
 function UpdateGame(dt)
@@ -79,8 +81,3 @@ function Render(renderer)
     PresentRenderer(renderer)
 end
 
-function DrawGameOver(renderer)
-    DrawRect(renderer, 0, 0, 800, 600, 50, 0, 0, 255)
-    DrawRect(renderer, 300, 250, 200, 60, 0, 255, 0, 255)
-    DrawRect(renderer, 300, 350, 200, 60, 255, 255, 0, 255)
-end

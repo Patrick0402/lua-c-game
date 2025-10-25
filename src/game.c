@@ -62,7 +62,9 @@ bool create_window_and_renderer()
 
 // ---------------- Forward Declarations ----------------
 int lua_draw_rect(lua_State *L);
-int lua_draw_text(lua_State *L);
+int lua_draw_text_center(lua_State *L);
+int lua_draw_text_raw(lua_State *L);
+
 int lua_clear_screen(lua_State *L);
 int lua_present_renderer(lua_State *L);
 
@@ -78,7 +80,8 @@ bool init_lua()
     }
     luaL_openlibs(L);
     lua_register(L, "DrawRect", lua_draw_rect);
-    lua_register(L, "DrawText", lua_draw_text);
+    lua_register(L, "DrawTextCenter", lua_draw_text_center);
+    lua_register(L, "DrawText", lua_draw_text_raw);
     lua_register(L, "ClearScreen", lua_clear_screen);
     lua_register(L, "PresentRenderer", lua_present_renderer);
 
@@ -250,7 +253,49 @@ int lua_draw_rect(lua_State *L)
     return 0;
 }
 
-int lua_draw_text(lua_State *L)
+int lua_draw_text_raw(lua_State *L)
+{
+    SDL_Renderer *renderer = (SDL_Renderer *)lua_touserdata(L, 1);
+    const char *text = luaL_checkstring(L, 2);
+    int x = luaL_checkinteger(L, 3);
+    int y = luaL_checkinteger(L, 4);
+    int r = luaL_checkinteger(L, 5);
+    int g = luaL_checkinteger(L, 6);
+    int b = luaL_checkinteger(L, 7);
+    int a = luaL_checkinteger(L, 8);
+
+    static TTF_Font *font = NULL;
+    if (!font)
+    {
+        font = TTF_OpenFont("assets/Roboto-Bold.ttf", 24);
+        if (!font)
+        {
+            LOG_ERROR("Failed to load font: %s", TTF_GetError());
+            return 0;
+        }
+    }
+
+    SDL_Color color = {r, g, b, a};
+    SDL_Surface *surface = TTF_RenderText_Blended(font, text, color);
+    if (!surface) return 0;
+
+    SDL_Texture *texture = SDL_CreateTextureFromSurface(renderer, surface);
+    if (!texture)
+    {
+        SDL_FreeSurface(surface);
+        return 0;
+    }
+
+    SDL_Rect dest = {x, y, surface->w, surface->h};
+    SDL_RenderCopy(renderer, texture, NULL, &dest);
+
+    SDL_FreeSurface(surface);
+    SDL_DestroyTexture(texture);
+
+    return 0;
+}
+
+int lua_draw_text_center(lua_State *L)
 {
     SDL_Renderer *renderer = (SDL_Renderer *)lua_touserdata(L, 1);
     const char *text = luaL_checkstring(L, 2);
@@ -274,9 +319,22 @@ int lua_draw_text(lua_State *L)
 
     SDL_Color color = {r, g, b, a};
     SDL_Surface *surface = TTF_RenderText_Blended(font, text, color);
-    SDL_Texture *texture = SDL_CreateTextureFromSurface(renderer, surface);
+    if (!surface)
+        return 0;
 
-    SDL_Rect dest = {x, y, surface->w, surface->h};
+    SDL_Texture *texture = SDL_CreateTextureFromSurface(renderer, surface);
+    if (!texture)
+    {
+        SDL_FreeSurface(surface);
+        return 0;
+    }
+
+    SDL_Rect dest;
+    dest.w = surface->w;
+    dest.h = surface->h;
+    dest.x = x - surface->w / 2; // centraliza horizontalmente
+    dest.y = y - surface->h / 2; // centraliza verticalmente
+
     SDL_RenderCopy(renderer, texture, NULL, &dest);
 
     SDL_FreeSurface(surface);

@@ -1,48 +1,46 @@
-GameState = GameState or {}
-GameState.current = "menu"
-
--- Configurações globais
-Config = {
-    screen_width = 800,
-    screen_height = 600,
-}
+-- Limites máximos de velocidade
+MAX_ENEMY_SPEED = 400
+MAX_PROJECTILE_SPEED = 600
 
 -- Controle de dificuldade
-local spawn_timer = 0
-local spawn_interval = 2
-local difficulty_timer = 0
-local difficulty_interval = 10
-local spawn_positions = {100,200,300,400,500,600,700}
-local speed_multiplier = 1
+SpawnTimer = 0
+SpawnInterval = 2
+DifficultyTimer = 0
+DifficultyInterval = 10
+SpawnPositions = {100,200,300,400,500,600,700}
+SpeedMultiplier = 1
 
 function ResetDifficulty()
-    spawn_timer = 0
-    spawn_interval = 2
-    difficulty_timer = 0
-    speed_multiplier = 1
+    SpawnTimer = 0
+    SpawnInterval = 2
+    DifficultyTimer = 0
+    SpeedMultiplier = 1
 end
 
 function HandleSpawning(dt)
-    spawn_timer = spawn_timer - dt
-    if spawn_timer <= 0 then
-        local x = spawn_positions[math.random(#spawn_positions)]
+    SpawnTimer = SpawnTimer - dt
+    if SpawnTimer <= 0 then
+        local x = SpawnPositions[math.random(#SpawnPositions)]
         local y = -30
-        SpawnEnemy(x, y)  -- SpawnEnemy já vai aplicar speed_multiplier
-        spawn_timer = spawn_interval
+        SpawnEnemy(x, y)
+        SpawnTimer = SpawnInterval
     end
 end
 
 function HandleDifficulty(dt)
-    difficulty_timer = difficulty_timer + dt
-    if difficulty_timer > difficulty_interval then
-        speed_multiplier = speed_multiplier * 1.1
-        difficulty_timer = 0
-        if spawn_interval > 0.5 then
-            spawn_interval = spawn_interval - 0.2
+    DifficultyTimer = DifficultyTimer + dt
+    if DifficultyTimer > DifficultyInterval then
+        DifficultyTimer = 0
+        SpeedMultiplier = math.min(SpeedMultiplier * 1.1, MAX_ENEMY_SPEED / 50)
+        SpawnInterval = math.max(SpawnInterval - 0.2, 0.5)
+
+        -- aumenta velocidade dos projéteis já existentes
+        for _, p in ipairs(EnemyProjectiles) do
+            p.speed = math.min(p.speed * 1.1, MAX_PROJECTILE_SPEED)
         end
     end
 end
 
 function GetSpeedMultiplier()
-    return speed_multiplier
+    return SpeedMultiplier
 end

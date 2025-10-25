@@ -2,7 +2,7 @@ Projectiles = {}
 EnemyProjectiles = {}
 
 function SpawnProjectile(x, y)
-    table.insert(Projectiles, { x = x, y = y, w = 4, h = 10, speed = 400 })
+    table.insert(Projectiles, { x = x, y = y, w = 4, h = 10, speed = 750 })
 end
 
 function UpdateProjectiles(dt)
@@ -29,19 +29,30 @@ end
 
 function UpdateEnemyProjectiles(dt)
     for i = #EnemyProjectiles, 1, -1 do
-        local p = EnemyProjectiles[i]
-        p.y = p.y + p.speed * dt
+        local proj = EnemyProjectiles[i]
+        proj.x = proj.x + proj.dx * proj.speed * dt
+        proj.y = proj.y + proj.dy * proj.speed * dt
 
-        -- Verifica colisão com o Player
-        if p.x + p.w > Player.x and p.x < Player.x + Player.w and
-            p.y + p.h > Player.y and p.y < Player.y + Player.h then
-            Player.hp = Player.hp - 1         -- Player perde 1 de HP
-            table.remove(EnemyProjectiles, i) -- Remove o projétil
-        elseif p.y > Config.screen_height then
+        local p = Player
+        if p and proj.x < p.x + p.w and proj.x + proj.w > p.x and
+           proj.y < p.y + p.h and proj.y + proj.h > p.y then
+
+            if p.invulnerable_timer <= 0 then
+                p.hp = p.hp - 1
+                p.invulnerable_timer = 1.0 -- 1 segundo de imunidade
+            end
+
+            table.remove(EnemyProjectiles, i)
+
+            if p.hp <= 0 then
+                GameState.current = "gameover"
+            end
+        elseif proj.y > Config.screen_height then
             table.remove(EnemyProjectiles, i)
         end
     end
 end
+
 
 function DrawProjectiles(renderer)
     for _, p in ipairs(Projectiles) do
